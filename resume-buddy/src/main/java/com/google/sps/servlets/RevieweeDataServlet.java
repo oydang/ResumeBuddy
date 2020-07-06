@@ -5,7 +5,7 @@ import com.google.appengine.api.datastore.DatastoreServiceFactory;
 import com.google.appengine.api.datastore.Entity;
 import com.google.gson.Gson;
 import com.google.sps.ServletHelpers;
-import com.google.sps.data.Reviewer;
+import com.google.sps.data.Reviewee;
 import java.io.IOException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -13,16 +13,16 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 /** Servlet that saves reviewer data from the form */
-@WebServlet("/reviewer-data")
-public class ReviewerDataServlet extends HttpServlet {
+@WebServlet("/reviewee-data")
+public class RevieweeDataServlet extends HttpServlet {
 
-  private Reviewer reviewer;
+  private Reviewee reviewee;
 
   @Override
   public void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
     // Send the JSON as the response
     response.setContentType("application/json");
-    String json = new Gson().toJson(reviewer);
+    String json = new Gson().toJson(reviewee);
     response.getWriter().println(json);
   }
 
@@ -32,14 +32,14 @@ public class ReviewerDataServlet extends HttpServlet {
     String fname = ServletHelpers.getParameter(request, "fname", "");
     String lname = ServletHelpers.getParameter(request, "lname", "");
     String email = ServletHelpers.getParameter(request, "email", "");
-    reviewer = new Reviewer(fname, lname, email);
-    Entity reviewerEntity = new Entity("Reviewer");
-    reviewerEntity.setProperty("first-name", fname);
-    reviewerEntity.setProperty("last-name", lname);
-    reviewerEntity.setProperty("email", email);
+    reviewee = new Reviewee(fname, lname, email);
+    Entity revieweeEntity = new Entity("Reviewee");
+    revieweeEntity.setProperty("first-name", fname);
+    revieweeEntity.setProperty("last-name", lname);
+    revieweeEntity.setProperty("email", email);
 
     DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
-    datastore.put(reviewerEntity);
+    datastore.put(revieweeEntity);
 
     response.sendRedirect("resume-review.html");
   }
