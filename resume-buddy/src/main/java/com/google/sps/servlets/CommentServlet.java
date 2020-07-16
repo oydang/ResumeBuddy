@@ -9,12 +9,15 @@ import com.google.appengine.api.datastore.Query;
 import com.google.appengine.api.datastore.Query.Filter;
 import com.google.appengine.api.datastore.Query.FilterOperator;
 import com.google.appengine.api.datastore.Query.FilterPredicate;
-import com.google.appengine.api.datastore.Query.SortDirection;
+import com.google.appengine.api.users.UserService;
+import com.google.appengine.api.users.UserServiceFactory;
 import com.google.gson.Gson;
 import com.google.sps.ServletHelpers;
 import com.google.sps.data.Comment;
+import com.google.sps.data.UserType;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -26,35 +29,15 @@ import javax.servlet.http.HttpServletResponse;
 @WebServlet("/comment")
 public class CommentServlet extends HttpServlet {
 
-  private List<Comment> comments;
-  static final int DEFAULT_COMMENTS_NUMBER = 5;
-
   @Override
   public void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    UserType userType = LoginServlet.getUserType();
+    List<Comment> comments = new ArrayList<>();
+    UserService userService = UserServiceFactory.getUserService();
+    String email = userService.getCurrentUser().getEmail();
+    addComments(userType, email, comments);
 
-    Query query = new Query("Review-comments").addSort("date", SortDirection.DESCENDING);
-    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
-    PreparedQuery results = datastore.prepare(query);
-
-    comments = new ArrayList<>();
-    String reviewer, reviewee, type, text, id;
-    Date date;
-    for (Entity entity : results.asIterable()) {
-      try {
-        reviewer = (String) entity.getProperty("reviewer");
-        reviewee = (String) entity.getProperty("reviewee");
-        type = (String) entity.getProperty("type");
-        text = (String) entity.getProperty("text");
-        date = (Date) entity.getProperty("date");
-        id = (String) entity.getProperty("uuid");
-      } catch (ClassCastException e) {
-        System.err.println("Could not cast entry property");
-        break;
-      }
-
-      comments.add(new Comment(reviewer, reviewee, text, type, date, id));
-    }
-
+    Collections.sort(comments, Comment.ORDER_BY_DATE);
     Gson gson = new Gson();
 
     response.setContentType("application/json;");
@@ -63,13 +46,26 @@ public class CommentServlet extends HttpServlet {
 
   @Override
   public void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    UserType userType = LoginServlet.getUserType();
     String type = ServletHelpers.getParameter(request, "type", "");
     String text = ServletHelpers.getParameter(request, "text", "");
     Date date = new Date();
 
-    // TODO: Get real reviewer and reviewee info when auth implemented
-    String reviewer = "";
+    UserService userService = UserServiceFactory.getUserService();
+    String email = userService.getCurrentUser().getEmail();
     String reviewee = "";
+    String reviewer = "";
+    if (userType == UserType.REVIEWEE) {
+      reviewee = email;
+      if (hasMatch(userType, email)) {
+        reviewer = getMatch(userType, email);
+      }
+    } else {
+      reviewer = userService.getCurrentUser().getEmail();
+      if (hasMatch(userType, email)) {
+        reviewee = getMatch(userType, email);
+      }
+    }
 
     UUID id = UUID.randomUUID();
     while (collides(id)) {
@@ -100,5 +96,72 @@ public class CommentServlet extends HttpServlet {
     PreparedQuery results = datastore.prepare(query);
 
     return results.countEntities(FetchOptions.Builder.withDefaults()) != 0;
+  }
+
+  /* Checks if the given user of the given userType has a match of the opposite userType. */
+  public static boolean hasMatch(UserType userType, String email) {
+    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
+    Query query = new Query("Match");
+    Filter emailFilter;
+    if (userType == UserType.REVIEWEE) {
+      emailFilter = new FilterPredicate("reviewee", FilterOperator.EQUAL, email);
+    } else {
+      emailFilter = new FilterPredicate("reviewer", FilterOperator.EQUAL, email);
+    }
+    query.setFilter(emailFilter);
+    PreparedQuery results = datastore.prepare(query);
+    return results.countEntities(FetchOptions.Builder.withDefaults()) != 0;
+  }
+
+  /* If it exists, gets the match of a given user (the user is of type userType). */
+  public static String getMatch(UserType userType, String email) {
+    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
+    Query query = new Query("Match");
+    Filter emailFilter;
+    if (userType == UserType.REVIEWEE) {
+      emailFilter = new FilterPredicate("reviewee", FilterOperator.EQUAL, email);
+    } else {
+      emailFilter = new FilterPredicate("reviewer", FilterOperator.EQUAL, email);
+    }
+    query.setFilter(emailFilter);
+    PreparedQuery results = datastore.prepare(query);
+    for (Entity entity : results.asIterable()) {
+      if (userType == UserType.REVIEWEE) {
+        return (String) entity.getProperty("reviewer");
+      } else {
+        return (String) entity.getProperty("reviewee");
+      }
+    }
+    return "";
+  }
+
+  /* add comments from given email and userType(reviewer or reviewee) */
+  public static void addComments(UserType userType, String email, List<Comment> comments) {
+    Query query = new Query("Review-comments");
+    Filter emailFilter;
+    if (userType == UserType.REVIEWEE) {
+      emailFilter = new FilterPredicate("reviewee", FilterOperator.EQUAL, email);
+    } else {
+      emailFilter = new FilterPredicate("reviewer", FilterOperator.EQUAL, email);
+    }
+    query.setFilter(emailFilter);
+    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
+    PreparedQuery results = datastore.prepare(query);
+    String reviewer, reviewee, type, text, id;
+    Date date;
+    for (Entity entity : results.asIterable()) {
+      try {
+        reviewer = (String) entity.getProperty("reviewer");
+        reviewee = (String) entity.getProperty("reviewee");
+        type = (String) entity.getProperty("type");
+        text = (String) entity.getProperty("text");
+        date = (Date) entity.getProperty("date");
+        id = (String) entity.getProperty("uuid");
+      } catch (ClassCastException e) {
+        System.err.println("Could not cast entry property");
+        break;
+      }
+      comments.add(new Comment(reviewer, reviewee, text, type, date, id));
+    }
   }
 }
